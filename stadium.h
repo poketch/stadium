@@ -2,22 +2,34 @@
 #define _STADIUM_ALLOCATOR_H
 
 #include <stdint.h>
-typedef struct {
-    size_t current_size;
-    size_t capacity;
+typedef struct Region
+{
+    struct Region *next;
+    size_t count;    // dynamic array counter. i.e. number of items of sizeof(uint8_t) allocated
+    size_t capacity; // capacity in number of chunks
     uint8_t *data;
-} Arena;
+} Region;
 
-Arena stadium_init(size_t capacity);
-void *stadium_alloc(Arena *stadium, size_t size);
-void *stadium_reset(Arena *stadium);
-void *stadium_free(Arena *stadium);
+Region *new_region(size_t capacity);
+void free_region(Region *r);
+void print_region(Region *r);
+
+typedef struct
+{
+    Region *begin;
+    Region *end;
+} Stadium;
+
+Stadium stadium_init(size_t capacity);
+void *stadium_alloc(Stadium *stadium, size_t size);
+void stadium_reset(Stadium *stadium);
+void stadium_free(Stadium *stadium);
+void dump_stadia(Stadium *stadium);
 
 #endif // HEADER
 
-
-
 // IMPLEMENTATION
+// #define STADIUM_ALLOCATOR_IMPLEMENTATION
 #ifdef STADIUM_ALLOCATOR_IMPLEMENTATION
 
 #ifndef STADIUM_NO_STDLIB
@@ -38,38 +50,75 @@ void *stadium_free(Arena *stadium);
 #endif
 
 #ifndef STADIUM_INITIAL_CAPACTIY
-#define STADIUM_INITIAL_CAPACITY 1024
+#define STADIUM_INITIAL_CAPACITY (sizeof(uint8_t *) * 0)
 #endif
 
-Arena stadium_init(size_t capacity)
-{   
-    uint8_t *items = (uint8_t*)STADIUM_ALLOC(sizeof(uint8_t) * capacity);
-    STADIUM_ASSERT(items != NULL);
-    Arena a  = {.current_size = 0, .capacity = capacity, .data = items};
-
-    return a;
-} 
-
-void *stadium_alloc(Arena *stadium, size_t size)
+Region *new_region(size_t capacity)
 {
-    STADIUM_ASSERT(stadium->current_size + size <= stadium->capacity && "Arena does not have enough space"); 
-    uint8_t *data = &stadium->data[stadium->current_size];
-    stadium->current_size += size;
-    return (void *)data;
+    size_t size = sizeof(Region) + capacity * sizeof(uint8_t *);
+    Region *r = STADIUM_ALLOC(size);
+    STADIUM_ASSERT(r != NULL && "LMFAO L + Ratio + Buy more RAM.");
+    r->next = NULL;
+    r->count = 0;
+    r->capacity = capacity;
+    return r;
 }
 
-void *stadium_reset(Arena *stadium)
+void free_region(Region *r)
 {
-    stadium->current_size = 0;
-    return NULL;
+    STADIUM_FREE(r);
+    return;
 }
 
-void *stadium_free(Arena *stadium)
+Stadium stadium_init(size_t size)
 {
-    stadium->capacity = 0;
-    stadium->current_size = 0;
-    STADIUM_FREE(stadium->data);
-    return NULL; 
+    Stadium s = {0};
+    size_t capacity = STADIUM_INITIAL_CAPACITY;
+    if (capacity < size)
+        capacity = size;
+    s.end = new_region(capacity);
+    s.begin = s.end;
+    return s;
+}
+
+void *stadium_alloc(Stadium *stadium, size_t size)
+{
+    STADIUM_ASSERT(stadium->begin->count + size <= stadium->begin->capacity && "Arena does not have enough space");
+
+    void *data = &stadium->end->data[stadium->end->count];
+    stadium->begin->count += size;
+    return data;
+}
+
+void stadium_reset(Stadium *stadium)
+{
+    stadium->end->count = 0;
+    return;
+}
+
+void stadium_free(Stadium *stadium)
+{
+    stadium->end->capacity = 0;
+    stadium->end->count = 0;
+    STADIUM_FREE(stadium->end->data);
+    return;
+}
+
+void dump_stadia(Stadium *stadium)
+{
+    size_t count = 1;
+    for (Region *r = stadium->begin; r != NULL; r = r->next)
+    {
+        printf("Region[%d]:", count++);
+        print_region(r);
+    }
+}
+
+void print_region(Region *r)
+{
+    printf("    Number of bytes currently allocated: %u\n", r->count);
+    printf("    Number of space available: %u\n", r->capacity);
+    printf("    Start of Region pointer location: %p\n", &r->data);
 }
 
 #endif // IMPLEMENTATION
